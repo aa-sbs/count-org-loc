@@ -39,11 +39,12 @@ jobs:
             echo "$response" | jq -r '.[].full_name' | while read full_name; do
               clone_url="https://$TOKEN@github.com/$full_name.git"
               repo_name=$(basename "$full_name")
-              echo "Getting branches for $repo_name"
+              echo "Fetching branches for $repo_name"
               branches=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$full_name/branches" | jq -r '.[].name')
               filtered=$(echo "$branches" | grep -vE '^(main|master)$')
+
               if [ -z "$filtered" ]; then
-                echo "No non-main/master branches found in $repo_name"
+                echo "Skipping $repo_name: only main/master branch exists"
                 continue
               fi
 
@@ -52,7 +53,7 @@ jobs:
                 echo "$date $b"
               done | sort -r | head -n1 | awk '{print $2}')
 
-              echo "Cloning $repo_name with branch $latest_branch"
+              echo "Cloning $repo_name with latest non-main/master branch: $latest_branch"
               git clone --depth=1 --branch "$latest_branch" "$clone_url" "$repo_name" || echo "Failed to clone $repo_name"
             done
 
@@ -69,3 +70,4 @@ jobs:
             cd ..
           done
           echo "Total lines across all repos: $total"
+
