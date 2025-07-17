@@ -1,1 +1,52 @@
+# .github/workflows/count-lines.yml
+name: Count Total Lines in Org Repos
 
+on:
+  workflow_dispatch:
+    inputs:
+      org:
+        description: 'GitHub Organization Name'
+        required: true
+        type: string
+      pat:
+        description: 'GitHub Personal Access Token (with repo access)'
+        required: true
+        type: string
+
+jobs:
+  count-lines:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout temporary repo
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y git curl jq
+
+      - name: Fetch and count lines in all repos
+        env:
+          ORG: ${{ github.event.inputs.org }}
+          TOKEN: ${{ github.event.inputs.pat }}
+        run: |
+          mkdir repos
+          cd repos
+          page=1
+          while :; do
+            repos=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/orgs/$ORG/repos?per_page=100&page=$page" | jq -r '.[].clone_url')
+            [ -z "$repos" ] && break
+            echo "$repos" | while read repo; do
+              echo "Cloning $repo"
+              git clone --depth=1 "$repo"
+            done
+            page=$((page + 1))
+          done
+          
+          total=0
+          for dir in */; do
+            cd "$dir"
+            lines=$(find . -type f \( -name "*.js" -o -name "*.ts" -o -name "*.py" -o -name "*.java" -o -name "*.go" -o -name "*.cpp" -o -name "*.c" -o -name "*.rb" -o -name "*.php" -o -name "*.rs" \) -exec cat {} + | wc -l)
+            echo "$dir: $lines lines"
+            total=$((total + lines))
+            cd ..
+          done
+          echo "Total lines across all repos: $total"
