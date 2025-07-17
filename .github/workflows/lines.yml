@@ -1,4 +1,5 @@
 # .github/workflows/count-lines.yml
+# .github/workflows/count-lines.yml
 name: Count Total Lines in Org Repos
 
 on:
@@ -32,15 +33,17 @@ jobs:
           cd repos
           page=1
           while :; do
-            repos=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/orgs/$ORG/repos?per_page=100&page=$page" | jq -r '.[].clone_url')
-            [ -z "$repos" ] && break
-            echo "$repos" | while read repo; do
-              echo "Cloning $repo"
-              git clone --depth=1 "$repo"
+            response=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/orgs/$ORG/repos?per_page=100&page=$page")
+            repo_count=$(echo "$response" | jq length)
+            [ "$repo_count" -eq 0 ] && break
+            echo "$response" | jq -r '.[] | "\(.clone_url) \(.default_branch)"' | while read clone_url default_branch; do
+              repo_name=$(basename "$clone_url" .git)
+              echo "Cloning $repo_name with default branch $default_branch"
+              git clone --depth=1 --branch "$default_branch" "$clone_url" "$repo_name"
             done
             page=$((page + 1))
           done
-          
+
           total=0
           for dir in */; do
             cd "$dir"
