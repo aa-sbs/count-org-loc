@@ -35,19 +35,27 @@ jobs:
             response=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/orgs/$ORG/repos?per_page=100&page=$page")
             repo_count=$(echo "$response" | jq length)
             [ "$repo_count" -eq 0 ] && break
-            echo "$response" | jq -r '.[].clone_url' | while read clone_url; do
-              repo_name=$(basename "$clone_url" .git)
-              echo "Fetching branches for $repo_name"
-              branches=$(git ls-remote --heads "$clone_url" 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||')
-              if [ -z "$branches" ]; then
-                echo "No branches found or repo inaccessible: $repo_name"
+
+            echo "$response" | jq -r '.[].full_name' | while read full_name; do
+              clone_url="https://$TOKEN@github.com/$full_name.git"
+              repo_name=$(basename "$full_name")
+              echo "Getting branches for $repo_name"
+              branches=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$full_name/branches" | jq -r '.[].name')
+              filtered=$(echo "$branches" | grep -vE '^(main|master)$')
+              if [ -z "$filtered" ]; then
+                echo "No non-main/master branches found in $repo_name"
                 continue
               fi
-              branch=$(echo "$branches" | grep -Ev '^(gh-pages|docs|dependabot|test|demo|wip)' | head -n1)
-              [ -z "$branch" ] && branch=$(echo "$branches" | head -n1)
-              echo "Cloning $repo_name with branch $branch"
-              git clone --depth=1 --branch "$branch" "$clone_url" "$repo_name" || echo "Failed to clone $repo_name"
+
+              latest_branch=$(for b in $filtered; do
+                date=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/repos/$full_name/commits/$b" | jq -r '.commit.committer.date')
+                echo "$date $b"
+              done | sort -r | head -n1 | awk '{print $2}')
+
+              echo "Cloning $repo_name with branch $latest_branch"
+              git clone --depth=1 --branch "$latest_branch" "$clone_url" "$repo_name" || echo "Failed to clone $repo_name"
             done
+
             page=$((page + 1))
           done
 
