@@ -1,5 +1,4 @@
 # .github/workflows/count-lines.yml
-# .github/workflows/count-lines.yml
 name: Count Total Lines in Org Repos
 
 on:
@@ -36,16 +35,25 @@ jobs:
             response=$(curl -s -H "Authorization: token $TOKEN" "https://api.github.com/orgs/$ORG/repos?per_page=100&page=$page")
             repo_count=$(echo "$response" | jq length)
             [ "$repo_count" -eq 0 ] && break
-            echo "$response" | jq -r '.[] | "\(.clone_url) \(.default_branch)"' | while read clone_url default_branch; do
+            echo "$response" | jq -r '.[].clone_url' | while read clone_url; do
               repo_name=$(basename "$clone_url" .git)
-              echo "Cloning $repo_name with default branch $default_branch"
-              git clone --depth=1 --branch "$default_branch" "$clone_url" "$repo_name"
+              echo "Fetching branches for $repo_name"
+              branches=$(git ls-remote --heads "$clone_url" 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||')
+              if [ -z "$branches" ]; then
+                echo "No branches found or repo inaccessible: $repo_name"
+                continue
+              fi
+              branch=$(echo "$branches" | grep -Ev '^(gh-pages|docs|dependabot|test|demo|wip)' | head -n1)
+              [ -z "$branch" ] && branch=$(echo "$branches" | head -n1)
+              echo "Cloning $repo_name with branch $branch"
+              git clone --depth=1 --branch "$branch" "$clone_url" "$repo_name" || echo "Failed to clone $repo_name"
             done
             page=$((page + 1))
           done
 
           total=0
           for dir in */; do
+            [ -d "$dir/.git" ] || continue
             cd "$dir"
             lines=$(find . -type f \( -name "*.js" -o -name "*.ts" -o -name "*.py" -o -name "*.java" -o -name "*.go" -o -name "*.cpp" -o -name "*.c" -o -name "*.rb" -o -name "*.php" -o -name "*.rs" \) -exec cat {} + | wc -l)
             echo "$dir: $lines lines"
